@@ -1,0 +1,1581 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RF CirSim v1.1</title>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.8.0/math.js"></script>
+    <script src="https://unpkg.com/konva@9.2.0/konva.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+
+    <style>
+        :root {
+            --bg-color: #1e1e1e;
+            --panel-color: #252526;
+            --text-color: #d4d4d4;
+            --accent-color: #007acc;
+            --border-color: #3e3e42;
+            --canvas-bg: #121212;
+            --input-bg: #333;
+        }
+
+        body.light-mode {
+            --bg-color: #f3f3f3;
+            --panel-color: #ffffff;
+            --text-color: #333333;
+            --accent-color: #007acc;
+            --border-color: #cccccc;
+            --canvas-bg: #ffffff;
+            --input-bg: #fff;
+        }
+
+        body {
+            margin: 0; padding: 0;
+            background-color: var(--bg-color); color: var(--text-color);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden; display: flex; height: 100vh; width: 100vw;
+            transition: background 0.3s, color 0.3s;
+        }
+
+        /* Layout */
+        #left-col {
+            flex: 0 0 18%; min-width: 220px; max-width: 350px;
+            background-color: var(--panel-color);
+            border-right: 1px solid var(--border-color);
+            display: flex; flex-direction: column; padding: 15px;
+            box-sizing: border-box; z-index: 20; overflow-y: auto;
+        }
+
+        #main-grid {
+            flex: 1; display: grid;
+            grid-template-columns: 1fr 1fr; grid-template-rows: 60% 40%; 
+            height: 100vh; min-width: 0;
+        }
+
+        .quadrant {
+            position: relative; border: 1px solid var(--border-color);
+            background-color: var(--panel-color); overflow: hidden;
+            display: flex; flex-direction: column; min-width: 0; min-height: 0; 
+        }
+
+        #quad-circuit { grid-column: 1 / 2; grid-row: 1 / 2; background-color: var(--canvas-bg); cursor: grab; }
+        #quad-circuit:active { cursor: grabbing; } /* 드래그 시 커서 변경 */
+        
+        #quad-rect { grid-column: 2 / 3; grid-row: 1 / 2; padding: 10px; }
+        #quad-math { grid-column: 1 / 2; grid-row: 2 / 3; padding: 15px; overflow-y: auto; }
+        #quad-smith { grid-column: 2 / 3; grid-row: 2 / 3; }
+
+        #canvas-container { flex: 1; width: 100%; height: 100%; overflow: hidden; }
+        .canvas-box { flex: 1; position: relative; width: 100%; height: 100%; overflow: hidden; }
+        canvas { display: block; width: 100% !important; height: 100% !important; }
+
+        .panel-title { font-size: 12px; font-weight: bold; color: #888; margin-bottom: 8px; flex-shrink: 0; display:flex; justify-content:space-between; }
+        h3 { margin: 15px 0 8px 0; font-size: 12px; text-transform: uppercase; color: #888; font-weight: 600; }
+        button {
+            border: 1px solid var(--border-color); padding: 8px 12px; margin-bottom: 6px;
+            cursor: pointer; border-radius: 4px; font-size: 13px;
+            background-color: var(--panel-color); color: var(--text-color);
+            display: flex; align-items: center; width: 100%; transition: all 0.2s;
+        }
+        button:hover { background-color: var(--accent-color); color: white; border-color: var(--accent-color); }
+        .btn-primary { background-color: #007acc; color: white; border: none; justify-content: center; font-weight: bold; }
+        .btn-danger { background-color: #c0392b !important; color: white !important; border: none !important; justify-content: center; }
+        .btn-apply { background-color: #27ae60; color: white; border: none; justify-content: center; font-weight: bold; margin-top: 5px; }
+        
+        input[type="number"], input[type="text"] {
+            width: 100%; padding: 6px; background: var(--input-bg);
+            border: 1px solid var(--border-color); color: var(--text-color);
+            border-radius: 3px; box-sizing: border-box;
+        }
+        label { display: block; margin-bottom: 4px; font-size: 11px; color: #aaa; }
+        .grid-controls { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+        .grid-btn-group button { width: 30px; padding: 4px; margin: 0; display: inline-block; justify-content: center; }
+
+        #inspector-panel { display: none; margin-bottom: 20px; border-bottom: 1px dashed var(--border-color); padding-bottom: 10px; }
+        #inspector-panel.active { display: block; animation: fadeIn 0.3s; }
+        .insp-row { margin-bottom: 10px; }
+        .math-eq { margin-bottom: 10px; font-size: 14px; }
+        
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+        #progress-overlay {
+            position: absolute; top:0; left:0; width:100%; height:100%;
+            background:rgba(0,0,0,0.7); display:none; justify-content:center; align-items:center; flex-direction:column; z-index:100; color: white;
+        }
+        #p-bar { width:200px; height:6px; background:#444; border-radius:3px; margin-top:5px; overflow:hidden; }
+        #p-fill { width:0%; height:100%; background:var(--accent-color); transition:width 0.1s; }
+        
+        .shortcut-hint { font-size: 10px; color: #666; margin-top: 2px; }
+
+        /* Tuning Styles */
+        .tuning-wrapper {
+            background: rgba(0, 122, 204, 0.1);
+            padding: 10px; border-radius: 4px; border: 1px solid var(--accent-color);
+            margin-top: 10px;
+        }
+        .tuning-label { display: flex; justify-content: space-between; font-size: 11px; font-weight: bold; margin-bottom: 5px; color: var(--accent-color); }
+        .radio-group { display:flex; gap: 10px; margin-bottom: 8px; font-size: 11px; }
+        .radio-group label { display: flex; align-items: center; gap: 4px; cursor: pointer; color: var(--text-color); margin: 0; }
+        input[type=range] { width: 100%; cursor: pointer; }
+
+        /* Draggable Marker Table */
+        #marker-container {
+            position: absolute; top: 50px; right: 20px;
+            background: rgba(37, 37, 38, 0.95);
+            border: 1px solid var(--border-color);
+            border-radius: 6px; 
+            width: 250px; 
+            z-index: 100;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            display: none; 
+        }
+        body.light-mode #marker-container { background: rgba(255, 255, 255, 0.95); }
+        
+        #marker-header {
+            padding: 5px 10px;
+            background: #007acc;
+            color: white;
+            font-size: 11px; font-weight: bold;
+            cursor: move;
+            border-radius: 5px 5px 0 0;
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        #marker-tools {
+            padding: 5px;
+            border-bottom: 1px solid #444;
+            display: flex; gap: 4px; flex-wrap: wrap;
+            background: rgba(0,0,0,0.2);
+        }
+        .btn-tool {
+            padding: 2px 8px; font-size: 10px; border-radius: 3px; border: 1px solid #555;
+            background: #333; color: #ddd; cursor: pointer; width: auto; margin:0;
+        }
+        .btn-tool:hover { background: #555; }
+        .btn-tool.active { background: #007acc; color: white; border-color: #007acc; }
+
+        select#search-target {
+            background: #222; color: #fff; border: 1px solid #555; font-size: 10px; border-radius: 3px; padding: 2px;
+        }
+
+        #marker-list {
+            padding: 5px;
+            font-size: 11px; color: var(--text-color);
+            max-height: 200px; overflow-y: auto;
+        }
+        .marker-item { display: flex; flex-direction: column; gap: 2px; border-bottom: 1px solid #444; padding: 6px 0; }
+        .marker-item:last-child { border-bottom: none; }
+        
+        .mk-row-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; }
+        .mk-lbl { font-weight: bold; color: white; background: #e74c3c; border-radius: 3px; padding: 1px 5px; font-size: 10px; }
+        .mk-freq { font-weight: bold; color: var(--accent-color); }
+        
+        .mk-data-row { display: flex; justify-content: space-between; color: var(--text-color); font-size: 10px; }
+        .mk-data-label { color: #888; margin-right: 4px; }
+        
+        .mk-delta { color: #f1c40f; font-weight: bold; margin-top: 4px; border-top: 1px dashed #555; padding-top: 4px; }
+        .btn-clear-marker { background: #c0392b; border: none; color: white; border-radius: 3px; padding: 2px 6px; font-size: 10px; cursor: pointer; }
+        
+        /* Zoom Control Tip */
+        #zoom-tip {
+            position: absolute; bottom: 10px; right: 10px;
+            background: rgba(0,0,0,0.6); color: #ccc;
+            padding: 4px 8px; border-radius: 4px; font-size: 10px;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="left-col">
+        <h2 style="margin: 0 0 5px 0; font-size: 18px;">RF CirSim v1.1</h2>
+        <div class="shortcut-hint">Ctrl+Z: Undo | Ctrl+C/V: Copy/Paste</div>
+        <div class="shortcut-hint" style="margin-bottom: 15px;">Wheel: Zoom | Drag: Pan</div>
+        
+        <div class="grid-controls">
+            <span style="font-weight:bold; font-size:12px; color: #888;">GRID RAILS</span>
+            <div class="grid-btn-group">
+                <button onclick="updateRailCount(-1)">-</button>
+                <button onclick="updateRailCount(1)">+</button>
+            </div>
+        </div>
+
+        <div class="section-group">
+            <h3>LUMPED</h3>
+            <button onclick="spawn('R')">R - Resistor</button>
+            <button onclick="spawn('L')">L - Inductor</button>
+            <button onclick="spawn('C')">C - Capacitor</button>
+        </div>
+
+        <div class="section-group">
+            <h3>RF COMPONENTS</h3>
+            <button onclick="spawn('PORT')"><span style="color:#e74c3c; font-weight:bold; margin-right:5px;">P</span> Port (50Ω)</button>
+            <button onclick="spawn('TL')">T - Trans. Line</button>
+            <button onclick="spawn('STUB_OPEN')">O - Open Stub</button>
+            <button onclick="spawn('STUB_SHORT')">S - Short Stub</button>
+            <button onclick="spawn('TX')">TX - Transformer</button>
+            <button onclick="spawn('S2P')">📂 S2P File Import</button>
+        </div>
+
+        <input type="file" id="s2pInput" style="display:none" accept=".s2p,.s1p" onchange="handleS2PFile(this)">
+
+        <div class="section-group">
+            <h3>SYSTEM</h3>
+            <div style="display:flex; gap:5px; margin-bottom:5px;">
+                <div style="flex:1"><label>Start (GHz)</label><input type="number" id="fStart" value="1.0" step="0.1"></div>
+                <div style="flex:1"><label>Stop (GHz)</label><input type="number" id="fStop" value="3.0" step="0.1"></div>
+            </div>
+            <div style="margin-bottom:10px;"><label>Points</label><input type="number" id="fPoints" value="200"></div>
+
+            <button onclick="checkCircuitValid()" style="color:#f1c40f; border-color:#f1c40f; font-weight:bold;">✅ Validate Circuit</button>
+            <div style="height:5px"></div>
+
+            <button id="btnRun" class="btn-primary" onclick="runSimulation()">▶ RUN SWEEP</button>
+            <button id="btnStop" class="btn-danger" style="display:none;" onclick="stopSimulation()">⏹ STOP</button>
+            <button onclick="toggleTheme()" style="margin-top:10px;">Dark / Bright Mode</button>
+            
+            <hr style="border:0; border-top:1px solid #444; margin:10px 0;">
+            <button onclick="resetView()" style="color:#ddd; border-color:#666;">⟲ Reset View</button>
+            <button onclick="exportCSV()" style="color:#3498db; border-color:#3498db;">📊 Save S-Params (CSV)</button>
+            <button onclick="saveCircuit()" style="color:#27ae60; border-color:#27ae60;">💾 Save Circuit</button>
+            <button onclick="document.getElementById('fileInput').click()" style="color:#f39c12; border-color:#f39c12;">📂 Load Circuit</button>
+            <input type="file" id="fileInput" style="display:none" onchange="loadCircuit(this)">
+            <button onclick="resetAll()" style="color:#e74c3c; border-color:#e74c3c;">🗑 Reset All</button>
+        </div>
+    </div>
+
+    <div id="main-grid">
+        <div class="quadrant" id="quad-circuit">
+            <div id="canvas-container"></div>
+            <div id="zoom-tip">Wheel to Zoom</div>
+        </div>
+
+        <div class="quadrant" id="quad-rect">
+            <div class="panel-title">S-Parameter Magnitude (dB)</div>
+            <div class="canvas-box"><canvas id="rectChart"></canvas></div>
+            
+            <div id="marker-container">
+                <div id="marker-header">
+                    <span>:: Marker List ::</span>
+                    <button class="btn-clear-marker" onclick="clearMarkers()">X</button>
+                </div>
+                <div id="marker-tools">
+                    <select id="search-target">
+                        <option value="S11">S11</option>
+                        <option value="S21">S21</option>
+                    </select>
+                    <button id="btn-peak" class="btn-tool" onclick="searchMarker('PEAK')">Peak</button>
+                    <button id="btn-min" class="btn-tool" onclick="searchMarker('MIN')">Min</button>
+                    <button id="btn-bw" class="btn-tool" onclick="searchMarker('BW')">3dB BW</button>
+                </div>
+                <div id="marker-list"></div>
+            </div>
+
+            <div id="progress-overlay">
+                <div style="font-weight:bold;">Simulating...</div>
+                <div id="p-bar"><div id="p-fill"></div></div>
+                <div id="status-text">0%</div>
+            </div>
+        </div>
+
+        <div class="quadrant" id="quad-math">
+            <div id="inspector-panel">
+                <div class="panel-title" style="color:var(--accent-color)">Selected Component</div>
+                <div id="inspector-content"></div>
+            </div>
+            <div class="panel-title">Physics & Formulas</div>
+            <div class="math-eq">1. <strong>Transmission Line (ABCD):</strong><br>$$ \begin{bmatrix} \cos(\beta l) & j Z_0 \sin(\beta l) \\ j Y_0 \sin(\beta l) & \cos(\beta l) \end{bmatrix} $$</div>
+            <div class="math-eq">2. <strong>Transformer (Ideal N):</strong><br> Modeled as Coupled Inductors ($k \approx 1$). <br> $Z_{in} = N^2 Z_{load}$</div>
+            <div class="math-eq">3. <strong>Constants:</strong><br>\( \beta = \frac{2\pi f \sqrt{\epsilon_{eff}}}{c} \), \( c \approx 3 \times 10^8 \text{ m/s} \)</div>
+        </div>
+
+        <div class="quadrant" id="quad-smith">
+            <div class="panel-title" style="position:absolute; top:10px; left:10px; z-index:10;">S11 Smith Chart</div>
+            <div class="canvas-box" id="smith-wrapper" style="display:flex; justify-content:center; align-items:center;">
+                <canvas id="smithCanvas"></canvas>
+            </div>
+        </div>
+    </div>
+
+<script>
+    const C_LIGHT = 299792458;
+    // [Modified] Enable dragging for pan
+    const stage = new Konva.Stage({ container: 'canvas-container', width: 100, height: 100, draggable: true });
+    const gridLayer = new Konva.Layer();
+    const compLayer = new Konva.Layer();
+    stage.add(gridLayer);
+    stage.add(compLayer);
+    
+    // [Added] Zoom Handling
+    const scaleBy = 1.1;
+    stage.on('wheel', (e) => {
+        // Stop default scrolling
+        e.evt.preventDefault();
+
+        const oldScale = stage.scaleX();
+        const pointer = stage.getPointerPosition();
+
+        const mousePointTo = {
+            x: (pointer.x - stage.x()) / oldScale,
+            y: (pointer.y - stage.y()) / oldScale,
+        };
+
+        // Determine zoom direction
+        const direction = e.evt.deltaY > 0 ? -1 : 1;
+
+        // Calculate new scale
+        const newScale = direction > 0 ? oldScale * scaleBy : oldScale / scaleBy;
+
+        // Limit zoom
+        if(newScale > 5 || newScale < 0.1) return;
+
+        stage.scale({ x: newScale, y: newScale });
+
+        const newPos = {
+            x: pointer.x - mousePointTo.x * newScale,
+            y: pointer.y - mousePointTo.y * newScale,
+        };
+        stage.position(newPos);
+    });
+
+    let components = [];
+    let railCount = 10; 
+    let groundRails = new Set(); 
+    let idCnt = { R:0, L:0, C:0, V:0, TL:0, STUB:0, PORT:0 };
+    let nodeWireShapes = []; 
+    
+    const START_X = 65, BASE_W = 120;
+    let TOP_GND_Y = 60, BOT_GND_Y = 500;
+
+    let myChart = null; 
+    let abortSim = false;
+    let lastSimData = null;
+    let isDarkMode = true; 
+    let selectedComp = null; 
+
+    // Tuning Variables
+    let baseTuneValue = 0; 
+    let tuningParam = 'val'; 
+
+    // Undo/Redo & Clipboard
+    let historyStack = [];
+    let historyStep = -1;
+    let clipboard = null;
+    const MAX_HISTORY = 20;
+
+    // Marker Variables
+    let markers = []; 
+    let activeSearchMode = null;
+
+    // --- Drag Logic for Marker Container ---
+    dragElement(document.getElementById("marker-container"));
+
+    function dragElement(elmnt) {
+        var pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+        if (document.getElementById("marker-header")) {
+            document.getElementById("marker-header").onmousedown = dragMouseDown;
+        } else {
+            elmnt.onmousedown = dragMouseDown;
+        }
+        function dragMouseDown(e) {
+            e = e || window.event; e.preventDefault();
+            pos3 = e.clientX; pos4 = e.clientY;
+            document.onmouseup = closeDragElement; document.onmousemove = elementDrag;
+        }
+        function elementDrag(e) {
+            e = e || window.event; e.preventDefault();
+            pos1 = pos3 - e.clientX; pos2 = pos4 - e.clientY;
+            pos3 = e.clientX; pos4 = e.clientY;
+            elmnt.style.top = (elmnt.offsetTop - pos2) + "px"; elmnt.style.left = (elmnt.offsetLeft - pos1) + "px";
+        }
+        function closeDragElement() { document.onmouseup = null; document.onmousemove = null; }
+    }
+
+    document.addEventListener('keydown', (e) => {
+        if((e.ctrlKey||e.metaKey) && e.key === 'z') { e.preventDefault(); undo(); }
+        if((e.ctrlKey||e.metaKey) && e.key === 'y') { e.preventDefault(); redo(); }
+        if((e.ctrlKey||e.metaKey) && e.key === 'c') { e.preventDefault(); copyComponent(); }
+        if((e.ctrlKey||e.metaKey) && e.key === 'v') { e.preventDefault(); pasteComponent(); }
+    });
+
+    // --- S2P Helper Variables & Functions ---
+    let pendingS2PComp = null;
+
+    function parseTouchstone(text) {
+        const lines = text.split('\n');
+        let freqUnit = 1e9; 
+        let format = 'DB';  
+        let z0 = 50;
+        let data = [];
+        
+        for (let line of lines) {
+            line = line.trim();
+            if (!line || line.startsWith('!')) continue; 
+            
+            if (line.startsWith('#')) {
+                const parts = line.toUpperCase().split(/\s+/);
+                if (parts.includes('HZ')) freqUnit = 1;
+                else if (parts.includes('KHZ')) freqUnit = 1e3;
+                else if (parts.includes('MHZ')) freqUnit = 1e6;
+                else if (parts.includes('GHZ')) freqUnit = 1e9;
+                
+                if (parts.includes('DB')) format = 'DB';
+                else if (parts.includes('MA')) format = 'MA';
+                else if (parts.includes('RI')) format = 'RI';
+                
+                const rIdx = parts.indexOf('R');
+                if (rIdx !== -1 && parts[rIdx + 1]) z0 = parseFloat(parts[rIdx + 1]);
+                continue;
+            }
+
+            const vals = line.trim().split(/\s+/).map(parseFloat);
+            if (vals.length < 9) continue; 
+            
+            const f = vals[0] * freqUnit;
+            let s11, s21, s12, s22;
+
+            const makeComplex = (v1, v2) => {
+                if (format === 'RI') return math.complex(v1, v2);
+                let mag = v1, ang = v2 * Math.PI / 180;
+                if (format === 'DB') mag = Math.pow(10, v1 / 20);
+                return math.complex(mag * Math.cos(ang), mag * Math.sin(ang));
+            };
+
+            s11 = makeComplex(vals[1], vals[2]);
+            s21 = makeComplex(vals[3], vals[4]);
+            s12 = makeComplex(vals[5], vals[6]);
+            s22 = makeComplex(vals[7], vals[8]);
+
+            data.push({ f, s11, s21, s12, s22 });
+        }
+        data.sort((a, b) => a.f - b.f);
+        return { z0, data };
+    }
+
+    function interpolateSParams(dataObj, targetFreq) {
+        const { data } = dataObj;
+        if (data.length === 0) return null;
+        
+        if (targetFreq <= data[0].f) return data[0];
+        if (targetFreq >= data[data.length - 1].f) return data[data.length - 1];
+
+        let i = 0;
+        while (i < data.length - 1 && targetFreq > data[i+1].f) i++;
+
+        const p1 = data[i];
+        const p2 = data[i+1];
+        const ratio = (targetFreq - p1.f) / (p2.f - p1.f);
+
+        const interpCplx = (c1, c2) => {
+            const re = c1.re + (c2.re - c1.re) * ratio;
+            const im = c1.im + (c2.im - c1.im) * ratio;
+            return math.complex(re, im);
+        };
+
+        return {
+            s11: interpCplx(p1.s11, p2.s11),
+            s21: interpCplx(p1.s21, p2.s21),
+            s12: interpCplx(p1.s12, p2.s12),
+            s22: interpCplx(p1.s22, p2.s22)
+        };
+    }
+
+    function handleS2PFile(input) {
+        const file = input.files[0];
+        if (!file || !pendingS2PComp) return;
+        
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const parsed = parseTouchstone(e.target.result);
+                pendingS2PComp.s2pData = parsed;
+                pendingS2PComp.fileName = file.name;
+                pendingS2PComp.labelObj.text(getLabel(pendingS2PComp)); 
+                compLayer.batchDraw();
+                pushHistory();
+                alert(`✅ Loaded: ${file.name}\nPoints: ${parsed.data.length}\nRef Z0: ${parsed.z0}Ω`);
+            } catch (err) {
+                console.error(err);
+                alert("❌ Failed to parse S2P file.");
+            }
+            pendingS2PComp = null;
+            input.value = ''; 
+        };
+        reader.readAsText(file);
+    }
+
+    function runSimulation() { runRFSweep(); }
+    function stopSimulation() { abortSim = true; }
+
+    function fitStage() {
+        const container = document.getElementById('canvas-container');
+        if (!container) return;
+        stage.width(container.offsetWidth); stage.height(container.offsetHeight);
+        BOT_GND_Y = container.offsetHeight - 40; 
+        
+        // Reset scale/position only on initial fit, not resizing to allow custom zoom
+        // But for this code, let's reset to ensure it looks right initially.
+        // Users can zoom afterwards.
+        
+        drawGrid(); updateAllWires();
+    }
+    // [Added] Reset View Function
+    function resetView() {
+        stage.scale({ x: 1, y: 1 });
+        stage.position({ x: 0, y: 0 });
+        stage.batchDraw();
+    }
+
+    new ResizeObserver(() => { fitStage(); }).observe(document.getElementById('quad-circuit'));
+
+    new ResizeObserver(() => {
+        const wrap = document.getElementById('smith-wrapper');
+        const cvs = document.getElementById('smithCanvas');
+        if(wrap.offsetWidth > 0) {
+            const size = Math.min(wrap.offsetWidth, wrap.offsetHeight) - 10;
+            cvs.width = size; cvs.height = size;
+            if(lastSimData) plotSmithData(lastSimData.s11_cplx);
+            else drawSmithGrid();
+        }
+    }).observe(document.getElementById('quad-smith'));
+
+    function toggleTheme() {
+        isDarkMode = !isDarkMode;
+        document.body.classList.toggle('light-mode');
+        drawGrid(); updateAllWires(); 
+        const newBg = isDarkMode ? '#121212' : '#ffffff';
+        components.forEach(c => {
+            if(c.shapeObj) {
+                const bg = c.shapeObj.findOne('.bg');
+                if(bg) bg.fill(newBg);
+            }
+        });
+        compLayer.batchDraw();
+        if(!lastSimData) drawSmithGrid(); else plotSmithData(lastSimData.s11_cplx); 
+        if(myChart) {
+            const c = isDarkMode ? '#aaa' : '#666';
+            const g = isDarkMode ? '#333' : '#ddd';
+            myChart.options.scales.x.grid.color = g; myChart.options.scales.y.grid.color = g;
+            myChart.options.scales.x.ticks.color = c; myChart.options.scales.y.ticks.color = c;
+            myChart.options.plugins.legend.labels.color = c; myChart.update();
+        }
+        updateMarkerPanel();
+    }
+
+    function getGridMetrics() {
+        let rw = BASE_W;
+        if (START_X + railCount * rw > stage.width() - 20) rw = (stage.width() - START_X - 20) / railCount;
+        if (rw < 30) rw = 30;
+        let compScale = Math.min(1, (rw * 0.9) / 100);
+        return { rw, compScale };
+    }
+    function getGridX(idx, rw) { return START_X + (idx - 1) * rw; }
+
+    function drawGrid() {
+        gridLayer.destroyChildren();
+        const { rw } = getGridMetrics();
+        const width = START_X + railCount * rw;
+        
+        // [수정] Dark Mode일 때 GND 라인(gc)을 흰색(#ffffff)으로 변경
+        const gc = isDarkMode ? '#ffffff' : '#aaa'; 
+        
+        const tc = isDarkMode ? '#d4d4d4' : '#555';
+        const la = isDarkMode ? '#343a40' : '#888';
+        const ls = isDarkMode ? '#444444' : '#e0e0e0';
+
+        // 상단 GND 라인
+        gridLayer.add(new Konva.Line({ points: [START_X - 20, TOP_GND_Y, width, TOP_GND_Y], stroke: gc, strokeWidth: 4 }));
+        gridLayer.add(new Konva.Text({ x: START_X - 20, y: TOP_GND_Y - 20, text: 'GND', fontStyle: 'bold', fill: tc }));
+        
+        // 하단 GND 라인
+        gridLayer.add(new Konva.Line({ points: [START_X - 20, BOT_GND_Y, width, BOT_GND_Y], stroke: gc, strokeWidth: 4 }));
+        gridLayer.add(new Konva.Text({ x: START_X - 20, y: BOT_GND_Y + 10, text: 'GND', fontStyle: 'bold', fill: tc }));
+
+        for (let i = 1; i <= railCount; i++) {
+            const x = getGridX(i, rw);
+            const isGnd = groundRails.has(i);
+            const l = new Konva.Line({ 
+                points: [x, TOP_GND_Y + 10, x, BOT_GND_Y - 10], 
+                stroke: isGnd ? la : ls, 
+                strokeWidth: isGnd ? 3 : 1, 
+                dash: isGnd ? [] : [4, 4] 
+            });
+            const grp = new Konva.Group({ x: x, y: TOP_GND_Y - 35 });
+            grp.add(new Konva.Circle({ radius: 10, fill: isGnd ? la : (isDarkMode ? '#333' : '#fff'), stroke: isDarkMode ? '#555' : '#ccc' }));
+            grp.add(new Konva.Text({ x: -10, y: -5, width: 20, align: 'center', text: `${i}`, fill: isGnd ? '#fff' : tc, fontSize: 10, fontStyle: 'bold' }));
+            
+            grp.on('mouseenter', () => document.body.style.cursor='default');
+            gridLayer.add(l); gridLayer.add(grp);
+        }
+        gridLayer.batchDraw();
+    }
+    
+    function pushHistory() {
+        if(historyStep < historyStack.length - 1) historyStack = historyStack.slice(0, historyStep + 1);
+        historyStack.push(JSON.stringify({
+            railCount, groundRails: Array.from(groundRails), idCnt,
+            components: components.map(c => ({
+                type: c.type, val: c.val, unit: c.unit, nL: c.nL, nR: c.nR,
+                z0: c.z0, len: c.len, eps_eff: c.eps_eff, rotation: c.rotation,
+                name: c.name, uiX: c.group.x(), uiY: c.group.y(),
+                s2pData: c.s2pData, fileName: c.fileName, ratio: c.ratio
+            }))
+        }));
+        if(historyStack.length > MAX_HISTORY) historyStack.shift(); else historyStep++;
+    }
+
+    function undo() {
+        if(historyStep > 0) { historyStep--; restoreState(historyStack[historyStep]); }
+    }
+    function redo() {
+        if(historyStep < historyStack.length - 1) { historyStep++; restoreState(historyStack[historyStep]); }
+    }
+    function restoreState(json) {
+        if(!json) return;
+        const d = JSON.parse(json);
+        components.forEach(c=>{c.group.destroy(); c.lineL.destroy(); c.lineR.destroy();}); components=[];
+        nodeWireShapes.forEach(s=>s.destroy()); nodeWireShapes=[];
+        railCount = d.railCount; groundRails = new Set(d.groundRails); idCnt = d.idCnt;
+        d.components.forEach(c => spawn(c.type, c, false)); 
+        drawGrid(); compLayer.batchDraw();
+    }
+
+    function copyComponent() {
+        if(selectedComp) {
+            clipboard = {
+                type: selectedComp.type, val: selectedComp.val, unit: selectedComp.unit,
+                z0: selectedComp.z0, len: selectedComp.len, eps_eff: selectedComp.eps_eff,
+                rotation: selectedComp.rotation, s2pData: selectedComp.s2pData, fileName: selectedComp.fileName, ratio: selectedComp.ratio
+            };
+        }
+    }
+
+    function pasteComponent() {
+        if(clipboard) {
+            const newCompData = {...clipboard, uiX: (stage.width()/2)+20, uiY: (stage.height()/2)+20};
+            delete newCompData.name; 
+            spawn(newCompData.type, newCompData, true); 
+        }
+    }
+
+    function updateRailCount(d) { let n = railCount + d; if (n < 2 || n > 50) return; railCount = n; pushHistory(); fitStage(); }
+
+    function updateNodeConnections() {
+        nodeWireShapes.forEach(s => s.destroy());
+        nodeWireShapes = [];
+        const { rw } = getGridMetrics();
+        const wc = isDarkMode ? '#d4d4d4' : '#333';
+
+        for (let i = 1; i <= railCount; i++) {
+            const connected = components.filter(c => {
+                if (c.rotation === 90) return c.nL === i || c.nR === i;
+                return c.nL === i; 
+            });
+            if (connected.length > 0) {
+                const ys = connected.map(c => c.group.y());
+                if (ys.length > 0) {
+                    const min = Math.min(...ys); const max = Math.max(...ys);
+                    if (max > min + 1) {
+                        const x = getGridX(i, rw);
+                        const l = new Konva.Line({ points: [x, min, x, max], stroke: wc, strokeWidth: 2, listening: false });
+                        compLayer.add(l); l.zIndex(0); nodeWireShapes.push(l);
+                    }
+                }
+            }
+        }
+    }
+    function updateAllWires() {
+        components.forEach(c => updateComp(c, false));
+        updateNodeConnections();
+        compLayer.batchDraw();
+    }
+
+    function generateUniqueName(type) {
+        let prefix = type;
+        if (type.includes('STUB')) prefix = 'STUB';
+        else if (type === 'PORT') prefix = 'PORT';
+        let max = 0;
+        components.forEach(c => {
+            if (c.name.startsWith(prefix)) {
+                const num = parseInt(c.name.replace(prefix, ''));
+                if (!isNaN(num) && num > max) max = num;
+            }
+        });
+        return prefix + (max + 1);
+    }
+
+    function spawn(type, params = null, pushHist = true) {
+        let c;
+        if (params) {
+            c = { ...params }; c.group = null; c.lineL = null; c.lineR = null; c.labelObj = null; c.shapeObj = null;
+            if(!c.name) c.name = generateUniqueName(type);
+            if(!c.s2pData) c.s2pData = null; 
+        } else {
+            c = { name: generateUniqueName(type), type, val: 10, unit: '', nL: 1, nR: 2, z0: 50, len: 10, eps_eff: 1, rotation: 90 };
+            if (type === 'R') { c.val = 50; c.unit = 'Ω'; }
+            else if (type === 'L') { c.val = 10; c.unit = 'nH'; }
+            else if (type === 'C') { c.val = 10; c.unit = 'pF'; }
+            else if (type === 'TL') { c.z0 = 50; c.len = 10; c.unit = 'mm'; }
+            else if (type.includes('STUB')) { c.z0 = 50; c.len = 10; c.unit = 'mm'; c.rotation = 0; }
+            else if (type === 'PORT') { c.z0 = 50; c.unit = 'Ω'; c.rotation = 0; }
+            else if (type === 'S2P') { 
+                c.unit = 'File'; 
+                c.s2pData = null; 
+                c.fileName = 'No File'; 
+                c.rotation = 90; 
+            }
+            else if (type === 'TX') {
+                c.unit = 'Ratio';
+                c.ratio = 2.0; 
+                c.rotation = 90;
+            }
+        }
+
+        const { rw } = getGridMetrics();
+        const initX = (c.uiX !== undefined) ? c.uiX : START_X + rw / 2;
+        const initY = (c.uiY !== undefined) ? c.uiY : (TOP_GND_Y + BOT_GND_Y) / 2;
+
+        const g = new Konva.Group({ x: initX, y: initY, draggable: true });
+        const wL = new Konva.Line({ points: [], stroke: '#333', strokeWidth: 2 });
+        const wR = new Konva.Line({ points: [], stroke: '#333', strokeWidth: 2 });
+        compLayer.add(wL); compLayer.add(wR);
+        c.group = g; c.lineL = wL; c.lineR = wR;
+
+        const shape = drawShape(c.type);
+        c.shapeObj = shape; g.add(shape);
+
+        const tc = isDarkMode ? '#d4d4d4' : '#333';
+        const lbl = new Konva.Text({ x: -50, y: -45, width: 100, align: 'center', fontSize: 10, fontStyle: 'bold', fill: tc, text: getLabel(c) });
+        g.add(lbl); c.labelObj = lbl;
+
+        g.on('mouseenter', () => { document.body.style.cursor = 'pointer'; const bg=shape.findOne('.bg'); if(bg){bg.stroke('#007acc'); bg.strokeWidth(2); compLayer.batchDraw();} });
+        g.on('mouseleave', () => { document.body.style.cursor = 'default'; if(selectedComp!==c){const bg=shape.findOne('.bg'); if(bg) bg.stroke(null); compLayer.batchDraw();} });
+
+        let clickTimer = null;
+        g.on('click', (e) => { e.cancelBubble = true; if(clickTimer) clearTimeout(clickTimer); clickTimer = setTimeout(() => { selectComponent(c); clickTimer = null; }, 200); });
+        
+        g.on('dblclick', (e) => { 
+            if(clickTimer) clearTimeout(clickTimer); 
+            e.cancelBubble = true; 
+            selectComponent(c); 
+            
+            if (c.type === 'S2P') {
+                pendingS2PComp = c;
+                document.getElementById('s2pInput').click();
+            } else if (c.type !== 'PORT') {
+                if (c.type.includes('STUB')) {
+                    c.rotation = (c.rotation === 0) ? 180 : 0;
+                } else {
+                    c.rotation = (c.rotation === 0) ? 90 : 0; 
+                }
+                snapComponent(c); 
+                pushHistory(); 
+            }
+        });
+        g.on('dragmove', () => { updateComp(c, true); compLayer.batchDraw(); });
+        g.on('dragend', () => { snapComponent(c); if(selectedComp === c) updateInspector(c); pushHistory(); });
+
+        components.push(c); compLayer.add(g);
+        snapComponent(c);
+        selectComponent(c);
+        if(pushHist) pushHistory();
+    }
+
+    function snapComponent(c) {
+        const { rw } = getGridMetrics();
+        const gx = c.group.x();
+        
+        if (c.rotation === 90) { 
+            let slotIdx = Math.floor((gx - START_X) / rw);
+            slotIdx = Math.max(0, Math.min(slotIdx, railCount - 2));
+            c.nL = slotIdx + 1; c.nR = slotIdx + 2;
+        } else { 
+            let idx = Math.round((gx - START_X) / rw) + 1;
+            if (idx < 1) idx = 1; if (idx > railCount) idx = railCount;
+            c.nL = idx; c.nR = -1;
+        }
+        c.uiX = c.group.x(); c.uiY = c.group.y();
+        updateComp(c); updateNodeConnections(); compLayer.batchDraw();
+    }
+
+    function updateComp(c, dragging = false) {
+        const { rw, compScale } = getGridMetrics();
+        c.group.scale({ x: compScale, y: compScale });
+        
+        const wc = isDarkMode ? '#d4d4d4' : '#333';
+        const tc = isDarkMode ? '#d4d4d4' : '#333';
+        c.lineL.stroke(wc); c.lineR.stroke(wc);
+        c.labelObj.fill(tc);
+
+        if(c.shapeObj) c.shapeObj.rotation(c.rotation);
+
+        if (c.rotation === 0 || c.rotation === 180) { // SHUNT
+            const railX = getGridX(c.nL, rw);
+            let ty = c.group.y();
+            if (ty < 50) ty = 50; if (ty > BOT_GND_Y - 50) ty = BOT_GND_Y - 50;
+            if(!dragging) c.group.position({ x: railX, y: ty });
+            
+            c.group.rotation(0); c.labelObj.rotation(0); c.labelObj.position({x:12, y:-10});
+
+            c.lineL.visible(true); 
+            const cx = c.group.x(); const cy = c.group.y();
+            const gap = 30 * compScale; 
+
+            if (c.type.includes('STUB')) {
+                c.lineL.visible(false); c.lineR.visible(false);
+            } else {
+                if (c.type === 'PORT') {
+                    c.lineL.visible(false); 
+                    c.lineR.visible(true);
+                    c.lineR.points([cx, cy + gap, cx, BOT_GND_Y]);
+                } else {
+                    const distTop = Math.abs(cy - TOP_GND_Y);
+                    const distBot = Math.abs(cy - BOT_GND_Y);
+                    if (distTop < distBot) {
+                        c.lineL.points([cx, cy - gap, cx, TOP_GND_Y]); c.lineR.visible(false);
+                    } else {
+                        c.lineL.points([cx, cy + gap, cx, BOT_GND_Y]); c.lineR.visible(false);
+                    }
+                }
+            }
+            if(c.shapeObj) {
+                if (c.rotation === 0) c.shapeObj.rotation(90);
+                else if (c.rotation === 180) c.shapeObj.rotation(270);
+            }
+
+        } else { // SERIES
+            const xL = getGridX(c.nL, rw);
+            const xR = getGridX(c.nR, rw);
+            const cx = (xL + xR) / 2;
+            let cy = c.group.y();
+            if (cy < 60) cy = 60; if (cy > BOT_GND_Y - 20) cy = BOT_GND_Y - 20;
+            if(!dragging) c.group.position({ x: cx, y: cy }); else cy = c.group.y();
+
+            c.group.rotation(0); c.labelObj.rotation(0); c.labelObj.position({x:-50, y:-45});
+            c.lineL.visible(true); c.lineR.visible(true);
+            
+            if(c.shapeObj) c.shapeObj.rotation(0);
+            c.lineL.points([xL, cy, c.group.x() - 30*compScale, cy]);
+            c.lineR.points([c.group.x() + 30*compScale, cy, xR, cy]);
+        }
+    }
+
+    function drawShape(type) {
+        const g = new Konva.Group();
+        const bgCol = isDarkMode ? '#121212' : '#ffffff';
+        g.add(new Konva.Rect({ x:-30, y:-30, width: 60, height: 60, fill: bgCol, name:'bg' })); 
+        
+        const l = (p, w = 2) => new Konva.Line({ points: p, stroke: '#888', strokeWidth: w, lineCap: 'round', lineJoin: 'round' });
+
+        if (type === 'R') g.add(l([-30,0, -20,0, -15,-10, -5,10, 5,-10, 15,10, 20,0, 30,0]));
+        else if (type === 'L') { g.add(new Konva.Path({ data: 'M-30,0 L-15,0 Q-7.5,-12 0,0 Q7.5,-12 15,0 L30,0', stroke: '#888', strokeWidth: 2 })); }
+        else if (type === 'C') { g.add(l([-30,0, -5,0])); g.add(l([5,0, 30,0])); g.add(l([-5,-15, -5,15])); g.add(l([5,-15, 5,15])); }
+        else if (type === 'TL') { g.add(l([-30,0, 30,0], 1)); g.add(new Konva.Rect({x:-20, y:-6, width:40, height:12, fill:'#e9ecef', stroke:'#868e96', strokeWidth:1})); }
+        else if (type.includes('STUB')) {
+             g.add(l([-30,0, 0,0])); 
+             if(type.includes('OPEN')) { /* Open */ } else { g.add(l([0,-10, 0,10])); }
+             g.add(new Konva.Rect({x:-10, y:-10, width:20, height:20, stroke:'#888'}));
+        }
+        else if (type === 'PORT') {
+             const circ = new Konva.Circle({x:0, y:0, radius:15, stroke:'#e74c3c', strokeWidth:2});
+             g.add(circ);
+             g.add(new Konva.Text({x:-4, y:-5, text:'P', fontSize:12, fill:'#e74c3c', fontStyle:'bold'}));
+             g.add(l([-30, 0, -15, 0])); 
+        }
+        else if (type === 'S2P') {
+            g.add(new Konva.Rect({x:-25, y:-15, width:50, height:30, fill:'#333', stroke:'#888', strokeWidth:1}));
+            g.add(new Konva.Text({x:-25, y:-7, width:50, align:'center', text:'S2P', fontSize:14, fontStyle:'bold', fill:'#fff'}));
+            g.add(l([-30,0, -25,0], 1)); 
+            g.add(l([25,0, 30,0], 1));   
+        }
+        else if (type === 'TX') {
+            g.add(new Konva.Path({ data: 'M-15,-10 Q-5,-10 -5,0 Q-5,10 -15,10', stroke: '#d4d4d4', strokeWidth: 2 }));
+            g.add(new Konva.Path({ data: 'M-15,-10 Q-25,-10 -25,0 Q-25,10 -15,10', stroke: '#d4d4d4', strokeWidth: 2 }));
+            g.add(new Konva.Path({ data: 'M15,-10 Q5,-10 5,0 Q5,10 15,10', stroke: '#d4d4d4', strokeWidth: 2 }));
+            g.add(new Konva.Path({ data: 'M15,-10 Q25,-10 25,0 Q25,10 15,10', stroke: '#d4d4d4', strokeWidth: 2 }));
+            g.add(new Konva.Line({ points: [0, -12, 0, 12], stroke: '#007acc', strokeWidth: 2 }));
+            g.add(l([-30,0, -25,0], 1)); g.add(l([25,0, 30,0], 1));   
+        }
+        return g;
+    }
+
+    function selectComponent(comp) {
+        selectedComp = comp;
+        components.forEach(c => { if(c.shapeObj) { const bg=c.shapeObj.findOne('.bg'); if(bg){bg.stroke(null); bg.shadowBlur(0);} }});
+        if (comp && comp.shapeObj) {
+            const bg = comp.shapeObj.findOne('.bg');
+            if(bg){ bg.stroke('#007acc'); bg.strokeWidth(2); bg.shadowColor('#007acc'); bg.shadowBlur(10); }
+            updateInspector(comp);
+        } else { document.getElementById('inspector-panel').classList.remove('active'); }
+        compLayer.batchDraw();
+    }
+
+    function updateInspector(c) {
+        const content = document.getElementById('inspector-content');
+        document.getElementById('inspector-panel').classList.add('active');
+        let html = `<div class="insp-row"><label>Name</label><input type="text" value="${c.name}" disabled></div>`;
+        
+        if (c.type === 'R' || c.type === 'L' || c.type === 'C') {
+            html += `<div class="insp-row"><label>Value (${c.unit})</label><input type="text" id="insp-val" value="${formatUnit(c.val, '').replace(/[a-zA-Z]*$/, '')}"></div>`;
+            baseTuneValue = c.val; tuningParam = 'val';
+        } else if (c.type === 'S2P') {
+            html += `<div class="insp-row"><label>File</label><input type="text" value="${c.fileName}" disabled></div>`;
+        } else if (c.type === 'TX') {
+            html += `<div class="insp-row"><label>Turn Ratio (1:N)</label><input type="number" id="insp-ratio" value="${c.ratio}" step="0.1"></div>`;
+            baseTuneValue = c.ratio; tuningParam = 'ratio';
+        } else {
+            if(c.z0 !== undefined) html += `<div class="insp-row"><label>Z0 (Ω)</label><input type="number" id="insp-z0" value="${c.z0}"></div>`;
+            if(c.len !== undefined) {
+                html += `<div class="insp-row"><label>Length (mm)</label><input type="text" id="insp-len" value="${c.len}"></div>`; 
+                baseTuneValue = c.len; tuningParam = 'len'; 
+            }
+            if(c.eps_eff !== undefined) html += `<div class="insp-row"><label>Eps_eff</label><input type="number" id="insp-eps" value="${c.eps_eff}"></div>`;
+        }
+        
+        if(c.type !== 'PORT' && c.type !== 'S2P') {
+            let radioHTML = '';
+            if (c.type === 'TL' || c.type.includes('STUB')) {
+                radioHTML = `<div class="radio-group">
+                                <label><input type="radio" name="tuneTarget" value="z0" onchange="setTuneTarget('z0')"> Z0</label>
+                                <label><input type="radio" name="tuneTarget" value="len" checked onchange="setTuneTarget('len')"> Length</label>
+                             </div>`;
+            }
+            html += `<div class="tuning-wrapper">
+                        ${radioHTML}
+                        <div class="tuning-label"><span>Tuning</span><span id="tune-pct">0%</span></div>
+                        <input type="range" min="-50" max="50" value="0" id="tune-slider">
+                        <button class="btn-apply" onclick="applyTuning()">Apply Value</button>
+                      </div>`;
+        }
+
+        const rotStyle = (c.type === 'PORT') ? 'display:none' : 'flex:1';
+        html += `<div class="insp-row" style="display:flex; gap:5px; margin-top:10px;">
+                    <button onclick="rotateSelected()" style="${rotStyle}">Rotate</button>
+                    <button onclick="deleteSelected()" style="flex:1; background:#c0392b; border:none; color:white;">Delete</button>
+                 </div>`;
+        content.innerHTML = html;
+
+        const setVal = (k, v) => { 
+            c[k] = v; c.labelObj.text(getLabel(c)); 
+            if(k === tuningParam) baseTuneValue = v; 
+            compLayer.batchDraw(); pushHistory(); 
+        };
+        const iV = document.getElementById('insp-val'); if(iV) iV.onchange = e => setVal('val', parseUnit(e.target.value));
+        const iZ = document.getElementById('insp-z0'); if(iZ) iZ.onchange = e => setVal('z0', parseFloat(e.target.value));
+        const iL = document.getElementById('insp-len'); if(iL) iL.onchange = e => setVal('len', parseFloat(e.target.value));
+        const iE = document.getElementById('insp-eps'); if(iE) iE.onchange = e => setVal('eps_eff', parseFloat(e.target.value));
+        const iRatio = document.getElementById('insp-ratio'); if(iRatio) iRatio.onchange = e => { c.ratio = parseFloat(e.target.value); baseTuneValue = c.ratio; c.labelObj.text(getLabel(c)); compLayer.batchDraw(); pushHistory(); };
+
+        const slider = document.getElementById('tune-slider');
+        const pctLabel = document.getElementById('tune-pct');
+        if(slider) {
+            slider.oninput = (e) => {
+                const pct = parseInt(e.target.value);
+                pctLabel.innerText = (pct > 0 ? '+' : '') + pct + '%';
+                const newVal = baseTuneValue * (1 + pct/100);
+                
+                c[tuningParam] = newVal;
+                
+                if (tuningParam === 'z0') { const el = document.getElementById('insp-z0'); if(el) el.value = newVal.toFixed(1); }
+                else if (tuningParam === 'len') { const el = document.getElementById('insp-len'); if(el) el.value = newVal.toFixed(2); }
+                else if (tuningParam === 'val') { const el = document.getElementById('insp-val'); if(el) el.value = formatUnit(newVal, '').replace(/[a-zA-Z]*$/, ''); }
+                else if (tuningParam === 'ratio') { const el = document.getElementById('insp-ratio'); if(el) el.value = newVal.toFixed(2); }
+
+                c.labelObj.text(getLabel(c));
+                compLayer.batchDraw();
+                runRFSweep(true);
+            };
+        }
+    }
+    
+    function setTuneTarget(param) {
+        if(selectedComp) {
+            tuningParam = param;
+            baseTuneValue = selectedComp[param];
+            document.getElementById('tune-slider').value = 0;
+            document.getElementById('tune-pct').innerText = "0%";
+        }
+    }
+
+    function applyTuning() {
+        if(selectedComp) {
+            baseTuneValue = selectedComp[tuningParam];
+            document.getElementById('tune-slider').value = 0;
+            document.getElementById('tune-pct').innerText = "0%";
+            pushHistory();
+        }
+    }
+
+    function rotateSelected() { 
+        if(selectedComp && selectedComp.type !== 'PORT') { 
+            if (selectedComp.type.includes('STUB')) selectedComp.rotation = (selectedComp.rotation===0)?180:0;
+            else selectedComp.rotation = (selectedComp.rotation===0)?90:0; 
+            snapComponent(selectedComp); 
+            pushHistory(); 
+        }
+    }
+    function deleteSelected() { if(selectedComp) { selectedComp.group.destroy(); selectedComp.lineL.destroy(); selectedComp.lineR.destroy(); components = components.filter(x=>x!==selectedComp); selectedComp=null; updateNodeConnections(); compLayer.draw(); document.getElementById('inspector-panel').classList.remove('active'); pushHistory(); }}
+
+    function getLabel(c) {
+        if (c.type === 'TX') return `${c.name}\n1:${c.ratio.toFixed(2)}`;
+        if (c.type === 'S2P') return `${c.name}\n${c.fileName || 'No File'}`; 
+        if (c.type === 'TL' || c.type.includes('STUB')) return `${c.name}\n${c.z0.toFixed(0)}Ω, ${c.len.toFixed(1)}mm`;
+        if (c.type === 'PORT') return `${c.name}\n${c.z0}Ω`;
+        return `${c.name}\n${formatUnit(c.val, c.unit)}`;
+    }
+    
+    function getSetup() {
+        if (components.length === 0) return null;
+        let matrixIdx = 0; const compactMap = {}; compactMap[0] = -1; compactMap[-1] = -1;
+        for (let i = 1; i <= railCount; i++) { 
+             if(groundRails.has(i)) compactMap[i] = -1; 
+             else compactMap[i] = matrixIdx++; 
+        }
+        if(matrixIdx === 0) return null;
+        return { map: compactMap, N: matrixIdx };
+    }
+
+    function checkCircuitValid() {
+        const error = validateCircuit();
+        if (error) alert("❌ Validation Failed:\n" + error);
+        else alert("✅ PASS:\nCircuit Matrix is valid and solvable.");
+    }
+
+    function validateCircuit() {
+        if (components.length === 0) return "No components placed.";
+        const ports = components.filter(c => c.type === 'PORT');
+        if (ports.length === 0) return "No Ports defined.";
+        
+        for(let p of ports) {
+            const node = p.nL;
+            const connected = components.some(c => c !== p && c.rotation === 90 && (c.nL === node || c.nR === node));
+            if(!connected) return `Port '${p.name}' is isolated (no series connection).`;
+        }
+        const s = getSetup();
+        if(!s) return "No active nodes found.";
+        return null;
+    }
+
+    async function runRFSweep(isTuning = false) {
+        const error = validateCircuit();
+        if(error) { if(!isTuning) alert("Error: " + error); return; }
+
+        const s = getSetup(); 
+        const { map, N } = s;
+
+        const fStart = parseFloat(document.getElementById('fStart').value) * 1e9;
+        const fStop = parseFloat(document.getElementById('fStop').value) * 1e9;
+        const points = parseInt(document.getElementById('fPoints').value);
+        const step = (fStop - fStart) / (points - 1);
+
+        const ports = components.filter(c => c.type === 'PORT');
+        ports.sort((a,b) => a.name.localeCompare(b.name));
+        const p1 = ports[0]; const p2 = ports[1];
+
+        const s11d=[], s21d=[], s11c=[], s21c=[], freqs=[];
+        
+        abortSim = false;
+        
+        if(!isTuning) {
+            document.getElementById('btnRun').style.display = 'none';
+            document.getElementById('btnStop').style.display = 'block';
+            document.getElementById('progress-overlay').style.display = 'flex';
+        }
+
+        for(let i=0; i<points; i++) {
+            if(abortSim) break;
+            const f = fStart + i*step;
+            const w = 2*Math.PI*f;
+            freqs.push((f/1e9));
+            
+            if (!isTuning && i % 20 === 0) {
+                document.getElementById('p-fill').style.width = `${(i / points) * 100}%`;
+                document.getElementById('status-text').innerText = `${(f / 1e9).toFixed(2)} GHz`;
+                await new Promise(r => setTimeout(r, 0));
+            }
+
+            let Y = math.zeros(N, N, 'sparse');
+            let J = math.zeros(N, 1, 'sparse');
+
+            const addY = (n1, n2, yval) => {
+                if(n1!==-1 && map[n1]!==undefined) Y.set([map[n1], map[n1]], math.add(Y.get([map[n1], map[n1]]), yval));
+                if(n2!==-1 && map[n2]!==undefined) Y.set([map[n2], map[n2]], math.add(Y.get([map[n2], map[n2]]), yval));
+                if(n1!==-1 && n2!==-1 && map[n1]!==undefined && map[n2]!==undefined) {
+                    Y.set([map[n1], map[n2]], math.subtract(Y.get([map[n1], map[n2]]), yval));
+                    Y.set([map[n2], map[n1]], math.subtract(Y.get([map[n2], map[n1]]), yval));
+                }
+            };
+
+            components.forEach(c => {
+                let n1 = c.nL, n2 = c.nR; 
+                if (c.rotation === 0 || c.rotation === 180) n2 = -1; 
+
+                let yval;
+                if(c.type==='R') yval = math.complex(1/c.val, 0);
+                else if(c.type==='L') yval = math.complex(0, -1/(w*c.val*1e-9)); 
+                else if(c.type==='C') yval = math.complex(0, w*c.val*1e-12); 
+                else if(c.type==='TL') {
+                    const len = c.len * 1e-3; 
+                    const bl = (w * Math.sqrt(c.eps_eff) / C_LIGHT) * len;
+                    const y0 = 1/c.z0;
+                    const cot = 1/Math.tan(bl); const csc = 1/Math.sin(bl);
+                    const safeCot = Math.abs(Math.tan(bl))<1e-9 ? 1e9 : cot;
+                    const safeCsc = Math.abs(Math.sin(bl))<1e-9 ? 1e9 : csc;
+                    const y11 = math.complex(0, -y0*safeCot);
+                    const y12 = math.complex(0, y0*safeCsc);
+                    if(map[n1]!==undefined) Y.set([map[n1],map[n1]], math.add(Y.get([map[n1],map[n1]]), y11));
+                    if(map[n2]!==undefined) Y.set([map[n2],map[n2]], math.add(Y.get([map[n2],map[n2]]), y11));
+                    if(map[n1]!==undefined && map[n2]!==undefined) {
+                        Y.set([map[n1],map[n2]], math.add(Y.get([map[n1],map[n2]]), y12));
+                        Y.set([map[n2],map[n1]], math.add(Y.get([map[n2],map[n1]]), y12));
+                    }
+                    return; 
+                }
+                else if(c.type.includes('STUB')) {
+                    const len = c.len * 1e-3;
+                    const bl = (w * Math.sqrt(c.eps_eff) / C_LIGHT) * len;
+                    const y0 = 1/c.z0;
+                    if(c.type.includes('OPEN')) yval = math.complex(0, y0*Math.tan(bl));
+                    else yval = math.complex(0, -y0/Math.tan(bl));
+                }
+                else if(c.type==='PORT') {
+                    yval = math.complex(1/c.z0, 0);
+                }
+                else if (c.type === 'S2P') {
+                    if (!c.s2pData) return;
+                    const sParams = interpolateSParams(c.s2pData, f);
+                    if (!sParams) return;
+                    const one = math.complex(1, 0);
+                    const z0Val = c.s2pData.z0;
+                    const S11 = sParams.s11, S12 = sParams.s12;
+                    const S21 = sParams.s21, S22 = sParams.s22;
+                    const term1 = math.multiply(math.add(one, S11), math.add(one, S22));
+                    const term2 = math.multiply(S12, S21);
+                    const Ds = math.subtract(term1, term2); 
+                    const den = math.multiply(Ds, z0Val);
+                    const y11_num = math.add(math.multiply(math.subtract(one, S11), math.add(one, S22)), math.multiply(S12, S21));
+                    const Y11 = math.divide(y11_num, den);
+                    const Y12 = math.divide(math.multiply(-2, S12), den);
+                    const Y21 = math.divide(math.multiply(-2, S21), den);
+                    const y22_num = math.add(math.multiply(math.add(one, S11), math.subtract(one, S22)), math.multiply(S12, S21));
+                    const Y22 = math.divide(y22_num, den);
+                    if(map[n1]!==undefined) Y.set([map[n1],map[n1]], math.add(Y.get([map[n1],map[n1]]), Y11));
+                    if(map[n2]!==undefined) Y.set([map[n2],map[n2]], math.add(Y.get([map[n2],map[n2]]), Y22));
+                    if(map[n1]!==undefined && map[n2]!==undefined) {
+                        Y.set([map[n1],map[n2]], math.add(Y.get([map[n1],map[n2]]), Y12));
+                        Y.set([map[n2],map[n1]], math.add(Y.get([map[n2],map[n1]]), Y21));
+                    }
+                    return; 
+                }
+                else if (c.type === 'TX') {
+                    const N_ratio = c.ratio; 
+                    // Simulation Model: Coupled Inductors with very high L and k=1
+                    // 1000nH is large enough for >1GHz
+                    const L1_val = 1000; 
+                    const L2_val = L1_val * N_ratio * N_ratio; 
+                    const k = 0.99999; 
+                    const M_val = k * Math.sqrt(L1_val * L2_val);
+
+                    const L1 = L1_val * 1e-9;
+                    const L2 = L2_val * 1e-9;
+                    const M = M_val * 1e-9;
+
+                    const delta = L1 * L2 - M * M;
+                    const factor = 1 / (w * delta); 
+
+                    // Y = 1/jw * 1/delta * [L2 -M; -M L1]
+                    const y11_tx = math.complex(0, -L2 * factor);
+                    const y12_tx = math.complex(0, M * factor); 
+                    const y22_tx = math.complex(0, -L1 * factor);
+
+                    if(map[n1]!==undefined) Y.set([map[n1],map[n1]], math.add(Y.get([map[n1],map[n1]]), y11_tx));
+                    if(map[n2]!==undefined) Y.set([map[n2],map[n2]], math.add(Y.get([map[n2],map[n2]]), y22_tx));
+                    if(map[n1]!==undefined && map[n2]!==undefined) {
+                        Y.set([map[n1],map[n2]], math.add(Y.get([map[n1],map[n2]]), y12_tx));
+                        Y.set([map[n2],map[n1]], math.add(Y.get([map[n2],map[n1]]), y12_tx));
+                    }
+                    return;
+                }
+                addY(n1, n2, yval);
+            });
+
+            const p1Node = map[p1.nL];
+            if(p1Node!==undefined) J.set([p1Node, 0], math.complex(2/p1.z0, 0));
+
+            try {
+                const V = math.lusolve(Y, J);
+                const v1 = V.get([p1Node, 0]);
+                const s11 = math.subtract(v1, 1);
+                s11c.push(s11);
+                s11d.push(20*Math.log10(math.abs(s11)+1e-9));
+                
+                if(p2) {
+                    const p2Node = map[p2.nL];
+                    if(p2Node!==undefined) {
+                        const v2 = V.get([p2Node, 0]);
+                        s21c.push(v2);
+                        s21d.push(20*Math.log10(math.abs(v2)+1e-9));
+                    } else { s21c.push(math.complex(0,0)); s21d.push(-100); }
+                }
+            } catch(e) { 
+                s11d.push(-100); if(p2) s21d.push(-100); s11c.push(math.complex(0,0));
+                break;
+            }
+        }
+        
+        if(!isTuning) {
+            document.getElementById('progress-overlay').style.display = 'none';
+            document.getElementById('btnRun').style.display = 'block';
+            document.getElementById('btnStop').style.display = 'none';
+        }
+        
+        lastSimData = { s11_cplx: s11c, s21_cplx: s21c, freq: freqs, s11_db: s11d, s21_db: s21d };
+        
+        if(activeSearchMode) executeSearchLogic(activeSearchMode);
+
+        drawRectPlot([{label:'S11', data:s11d, borderColor:'#007acc'}, ...(p2 ? [{label:'S21', data:s21d, borderColor:'#27ae60'}] : [])]);
+        plotSmithData(s11c);
+        if(markers.length > 0) {
+            document.getElementById('marker-container').style.display = 'block';
+            updateMarkerPanel(); 
+        }
+    }
+
+    // Marker Logic
+    function searchMarker(type) {
+        if(!lastSimData) return;
+        activeSearchMode = type;
+        document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active'));
+        if(type === 'PEAK') document.getElementById('btn-peak').classList.add('active');
+        if(type === 'MIN') document.getElementById('btn-min').classList.add('active');
+        if(type === 'BW') document.getElementById('btn-bw').classList.add('active');
+
+        executeSearchLogic(type);
+        document.getElementById('marker-container').style.display = 'block';
+        updateMarkerPanel(); updateChartMarkers(); plotSmithData(lastSimData.s11_cplx);
+    }
+
+    function executeSearchLogic(type) {
+        if(!lastSimData) return;
+        const targetStr = document.getElementById('search-target').value;
+        const data = (targetStr === 'S21' && lastSimData.s21_db && lastSimData.s21_db.length > 0) ? lastSimData.s21_db : lastSimData.s11_db;
+        const addMk = (idx) => { if(!markers.includes(idx)) markers.push(idx); };
+
+        if (type === 'PEAK') {
+            let maxVal = -Infinity; let maxIdx = -1;
+            for(let i=0; i<data.length; i++){ if(data[i] > maxVal) { maxVal = data[i]; maxIdx = i; } }
+            if(maxIdx !== -1) { clearMarkers(false); addMk(maxIdx); }
+        }
+        else if (type === 'MIN') {
+            let minVal = Infinity; let minIdx = -1;
+            for(let i=0; i<data.length; i++){ if(data[i] < minVal) { minVal = data[i]; minIdx = i; } }
+            if(minIdx !== -1) { clearMarkers(false); addMk(minIdx); }
+        }
+        else if (type === 'BW') {
+            let maxVal = -Infinity; let maxIdx = -1;
+            for(let i=0; i<data.length; i++){ if(data[i] > maxVal) { maxVal = data[i]; maxIdx = i; } }
+            if(maxIdx === -1) return;
+            const targetLev = maxVal - 3;
+            let leftIdx = -1; let rightIdx = -1;
+            for(let i=maxIdx; i>=0; i--) { if(data[i] < targetLev) { leftIdx = i; break; } }
+            for(let i=maxIdx; i<data.length; i++) { if(data[i] < targetLev) { rightIdx = i; break; } }
+            clearMarkers(false);
+            if(leftIdx !== -1) addMk(leftIdx);
+            if(rightIdx !== -1) addMk(rightIdx);
+        }
+        markers.sort((a,b)=>a-b);
+    }
+
+    function updateMarkerPanel() {
+        const list = document.getElementById('marker-list');
+        list.innerHTML = ''; 
+        if(!lastSimData || markers.length === 0) {
+            list.innerHTML = '<div style="padding:5px; color:#888; text-align:center;">No Markers</div>'; return;
+        }
+        const valColor = isDarkMode ? '#ffffff' : '#000000';
+
+        if(markers.length >= 2) {
+            const idx1 = markers[0]; const idx2 = markers[markers.length - 1]; 
+            const f1 = lastSimData.freq[idx1]; const f2 = lastSimData.freq[idx2];
+            const df = Math.abs(f2 - f1);
+            let row = document.createElement('div');
+            row.className = 'marker-item mk-delta';
+            row.style.borderBottom = "1px dashed #777"; row.style.marginBottom = "6px"; row.style.paddingBottom = "6px";
+            row.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center;">
+                                <span style="color:#f1c40f; font-weight:bold; font-size:11px;">Δ(M${markers.length}-M1) BW:</span>
+                                <span style="color:${valColor}; font-weight:bold; font-size:12px;">${df.toFixed(4)} GHz</span>
+                             </div>`;
+            list.appendChild(row);
+        }
+        
+        markers.forEach((idx, i) => {
+            const freq = lastSimData.freq[idx].toFixed(4);
+            const s11db = lastSimData.s11_db[idx].toFixed(2);
+            const s11deg = (Math.atan2(lastSimData.s11_cplx[idx].im, lastSimData.s11_cplx[idx].re) * 180 / Math.PI).toFixed(1);
+
+            let s21Str = "";
+            if(lastSimData.s21_db && lastSimData.s21_db.length > 0) {
+                 const s21db = lastSimData.s21_db[idx].toFixed(2);
+                 const s21deg = (Math.atan2(lastSimData.s21_cplx[idx].im, lastSimData.s21_cplx[idx].re) * 180 / Math.PI).toFixed(1);
+                 s21Str = `<div class="mk-data-row"><span class="mk-data-label">S21:</span> <span>${s21db}dB ∠${s21deg}°</span></div>`;
+            }
+            
+            let row = document.createElement('div');
+            row.className = 'marker-item';
+            row.innerHTML = `<div class="mk-row-top"><span class="mk-lbl">M${i+1}</span><span class="mk-freq">${freq} GHz</span></div>
+                             <div class="mk-data-row"><span class="mk-data-label">S11:</span> <span>${s11db}dB ∠${s11deg}°</span></div>${s21Str}`;
+            list.appendChild(row);
+        });
+    }
+
+    function clearMarkers(resetMode = true) {
+        markers = [];
+        if(resetMode) {
+            activeSearchMode = null;
+            document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active'));
+            document.getElementById('marker-list').innerHTML = '';
+            document.getElementById('marker-container').style.display = 'none';
+        }
+        if(myChart) {
+            myChart.data.datasets = myChart.data.datasets.filter(d => d.type !== 'scatter');
+            myChart.update();
+        }
+        plotSmithData(lastSimData ? lastSimData.s11_cplx : [], -1);
+    }
+    
+    function updateChartMarkers() {
+        if(!myChart || !lastSimData) return;
+        const labels = myChart.data.labels; const datasets = myChart.data.datasets;
+        const markerData = [];
+        markers.forEach(m => {
+            if(m < datasets[0].data.length) markerData.push({ x: labels[m], y: datasets[0].data[m] });
+            if(datasets.length > 1 && datasets[1].label !== 'Markers' && m < datasets[1].data.length) {
+                markerData.push({ x: labels[m], y: datasets[1].data[m] });
+            }
+        });
+
+        let markerDataset = datasets.find(d => d.label === 'Markers');
+        if(markerDataset) { markerDataset.data = markerData; } 
+        else {
+            myChart.data.datasets.push({ label: 'Markers', type: 'scatter', backgroundColor: 'red', pointRadius: 5, data: markerData });
+        }
+        myChart.update();
+    }
+
+    const markerLabelPlugin = {
+        id: 'markerLabels',
+        afterDatasetsDraw(chart) {
+            const { ctx } = chart;
+            chart.data.datasets.forEach((dataset, i) => {
+                if (dataset.label === 'Markers') {
+                    const meta = chart.getDatasetMeta(i);
+                    meta.data.forEach((element, index) => {
+                        const { x, y } = element.tooltipPosition();
+                        ctx.save();
+                        ctx.fillStyle = isDarkMode ? '#ffffff' : '#000000';
+                        ctx.font = 'bold 11px Arial';
+                        const markerIdx = Math.floor(index / (lastSimData.s21_db.length > 0 ? 2 : 1));
+                        ctx.fillText(`M${markerIdx + 1}`, x + 8, y - 8);
+                        ctx.restore();
+                    });
+                }
+            });
+        }
+    };
+
+    function drawRectPlot(datasets) {
+        const ctx = document.getElementById('rectChart').getContext('2d');
+        if(myChart) myChart.destroy();
+        const fStart = parseFloat(document.getElementById('fStart').value);
+        const fStop = parseFloat(document.getElementById('fStop').value);
+        const labels = datasets[0].data.map((_,i) => (fStart + i*(fStop-fStart)/(datasets[0].data.length-1)).toFixed(4));
+        const gridColor = isDarkMode ? '#333' : '#ddd';
+        const textColor = isDarkMode ? '#aaa' : '#666';
+
+        myChart = new Chart(ctx, {
+            type: 'line', data: { labels, datasets },
+            plugins: [markerLabelPlugin], 
+            options: { responsive:true, maintainAspectRatio:false, elements:{point:{radius:0}}, interaction:{mode:'index', intersect:false},
+                onHover: (e, el) => { if(el.length) plotSmithData(lastSimData.s11_cplx, el[0].index); else plotSmithData(lastSimData.s11_cplx, -1); },
+                onClick: (e, el) => {
+                      if(el.length && lastSimData) {
+                          const idx = el[0].index;
+                          activeSearchMode = null;
+                          document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active'));
+                          if(!markers.includes(idx)) markers.push(idx);
+                          markers.sort((a,b)=>a-b);
+                          updateMarkerPanel(); document.getElementById('marker-container').style.display = 'block';
+                          updateChartMarkers(); plotSmithData(lastSimData.s11_cplx, idx); 
+                      }
+                },
+                scales: {
+                    x: { ticks: { color: textColor, autoSkip: true, maxTicksLimit: 10 }, grid: { color: gridColor } },
+                    y: { ticks: { color: textColor }, grid: { color: gridColor }, max:5, min:-60 }
+                },
+                plugins: { legend: { labels: { color: textColor } } }
+            }
+        });
+        updateChartMarkers();
+    }
+
+    const smithCanvas = document.getElementById('smithCanvas');
+    const smithCtx = smithCanvas.getContext('2d');
+    
+    function drawSmithGrid() {
+        const w = smithCanvas.parentElement.offsetWidth;
+        const h = smithCanvas.parentElement.offsetHeight;
+        if(w<20 || h<20) return {S_CENTER:{x:0,y:0}, S_RADIUS:0};
+        smithCanvas.width=w; smithCanvas.height=h;
+        const r = Math.min(w,h)/2 - 10, cx = w/2, cy = h/2;
+        
+        const bg = isDarkMode ? '#121212' : '#ffffff';
+        const outerCircle = isDarkMode ? '#333' : '#aaa';
+        const axisColor = isDarkMode ? '#666' : '#888';
+        const impColor = isDarkMode ? '#444' : '#ccc';   
+        const admColor = '#27ae60';                      
+
+        smithCtx.fillStyle = bg; smithCtx.fillRect(0,0,w,h);
+        
+        smithCtx.save();
+        smithCtx.beginPath(); smithCtx.arc(cx,cy,r,0,2*Math.PI); 
+        smithCtx.clip();
+
+        smithCtx.save();
+        smithCtx.translate(cx, cy); smithCtx.rotate(Math.PI); smithCtx.translate(-cx, -cy);
+        smithCtx.strokeStyle = admColor; smithCtx.lineWidth = 1; smithCtx.setLineDash([2, 4]);
+        [0.5, 1, 2].forEach(n=>{ const rad = r / (n + 1); const cen = cx + r * (n / (n + 1)); });
+        smithCtx.restore();
+
+        smithCtx.strokeStyle = admColor; smithCtx.setLineDash([2, 4]);
+        [0.5, 1, 2].forEach(gVal => { const rad = r / (gVal + 1); const cenX = cx - r * (gVal / (gVal + 1)); smithCtx.beginPath(); smithCtx.arc(cenX, cy, rad, 0, 2*Math.PI); smithCtx.stroke(); });
+        [0.5, 1, 2, -0.5, -1, -2].forEach(bVal => { const rad = r / Math.abs(bVal); const cenX = cx - r; const cenY = cy - (r / bVal); smithCtx.beginPath(); smithCtx.arc(cenX, cenY, rad, 0, 2*Math.PI); smithCtx.stroke(); });
+
+        smithCtx.strokeStyle = impColor; smithCtx.setLineDash([]); smithCtx.lineWidth = 1;
+        [0.5, 1, 2].forEach(rVal => { const rad = r / (rVal + 1); const cenX = cx + r * (rVal / (rVal + 1)); smithCtx.beginPath(); smithCtx.arc(cenX, cy, rad, 0, 2*Math.PI); smithCtx.stroke(); });
+        [0.5, 1, 2, -0.5, -1, -2].forEach(xVal => { const rad = r / Math.abs(xVal); const cenX = cx + r;  const cenY = cy - (r / xVal); smithCtx.beginPath(); smithCtx.arc(cenX, cenY, rad, 0, 2*Math.PI); smithCtx.stroke(); });
+
+        smithCtx.restore(); 
+
+        smithCtx.strokeStyle = axisColor; smithCtx.lineWidth=1;
+        smithCtx.beginPath(); smithCtx.moveTo(cx-r, cy); smithCtx.lineTo(cx+r, cy); smithCtx.stroke();
+        
+        smithCtx.strokeStyle = outerCircle; smithCtx.lineWidth=2;
+        smithCtx.beginPath(); smithCtx.arc(cx,cy,r,0,2*Math.PI); smithCtx.stroke();
+
+        return {S_CENTER:{x:cx,y:cy}, S_RADIUS:r};
+    }
+
+    function plotSmithData(data, hlIdx=-1) {
+        const {S_CENTER, S_RADIUS} = drawSmithGrid();
+        const ctx = smithCtx;
+        
+        if(markers.length > 0 && data) {
+            markers.forEach((idx, i) => {
+               if(data[idx]) {
+                   const z = data[idx];
+                   const mx = S_CENTER.x + z.re * S_RADIUS;
+                   const my = S_CENTER.y - z.im * S_RADIUS;
+                   ctx.beginPath(); ctx.arc(mx, my, 4, 0, 2*Math.PI); ctx.fillStyle='red'; ctx.fill(); 
+                   ctx.fillStyle = isDarkMode ? '#fff' : '#000'; ctx.font = '11px Arial'; ctx.fillText(`M${i+1}`, mx + 6, my - 6);
+               }
+            });
+        }
+
+        if(!data || !data.length) return;
+        
+        ctx.save();
+        ctx.beginPath(); ctx.arc(S_CENTER.x, S_CENTER.y, S_RADIUS, 0, 2*Math.PI); ctx.clip();
+
+        ctx.lineWidth=2;
+        for(let i=0; i<data.length-1; i++) {
+            const z1=data[i], z2=data[i+1];
+            const x1=S_CENTER.x+z1.re*S_RADIUS, y1=S_CENTER.y-z1.im*S_RADIUS;
+            const x2=S_CENTER.x+z2.re*S_RADIUS, y2=S_CENTER.y-z2.im*S_RADIUS;
+            ctx.strokeStyle=`hsl(${240-i/data.length*240}, 100%, 50%)`;
+            ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+        }
+        ctx.restore();
+
+        if(hlIdx>=0 && data[hlIdx]) {
+            const z=data[hlIdx];
+            ctx.beginPath(); ctx.arc(S_CENTER.x+z.re*S_RADIUS, S_CENTER.y-z.im*S_RADIUS, 5, 0, 2*Math.PI);
+            ctx.fillStyle='white'; ctx.fill(); ctx.stroke();
+        }
+    }
+
+    function exportCSV() {
+        if (!lastSimData || !lastSimData.freq) return alert("No simulation data to export.");
+        let csvContent = "Freq(GHz),S11(dB),S21(dB)\n";
+        const len = lastSimData.freq.length;
+        for (let i = 0; i < len; i++) {
+            const f = lastSimData.freq[i].toFixed(4);
+            const s11 = lastSimData.s11_db[i].toFixed(4);
+            const s21 = (lastSimData.s21_db && lastSimData.s21_db[i]) ? lastSimData.s21_db[i].toFixed(4) : "-100";
+            csvContent += `${f},${s11},${s21}\n`;
+        }
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", "s_parameters.csv");
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    function formatUnit(v,u) {
+        if(Math.abs(v)<1e-15) return "0"+u;
+        const p = Math.floor(Math.log10(Math.abs(v))/3);
+        const s = ['p','n','u','m','','k','M','G'][p+4];
+        if(s===undefined) return v.toExponential(1)+u;
+        return (v/Math.pow(10,p*3)).toFixed(2)+s+u;
+    }
+    function parseUnit(s) {
+        if(!s) return NaN; s=s.toString();
+        const m=s.match(/^([\d\.]+)\s*([a-zA-Z]*)$/);
+        if(!m) return parseFloat(s);
+        const v=parseFloat(m[1]), u=m[2];
+        const map = {'p':1e-12,'n':1e-9,'u':1e-6,'m':1e-3,'k':1e3,'M':1e6,'G':1e9};
+        return v * (map[u]||1);
+    }
+    
+    function resetAll(){ 
+        components.forEach(c=>{c.group.destroy();c.lineL.destroy();c.lineR.destroy();}); 
+        components=[]; 
+        nodeWireShapes.forEach(s=>s.destroy()); nodeWireShapes=[]; 
+        idCnt={R:0,L:0,C:0,V:0,TL:0,STUB:0,PORT:0}; railCount=10; groundRails.clear();
+        drawGrid(); 
+        compLayer.batchDraw(); 
+        if(myChart) { myChart.destroy(); myChart=null; }
+        lastSimData = null; 
+        clearMarkers();
+        drawSmithGrid(); 
+        document.getElementById('inspector-panel').classList.remove('active');
+        pushHistory();
+    }
+    
+    function saveCircuit(){ 
+        const data={railCount,groundRails:Array.from(groundRails),components:components.map(c=>({name:c.name,type:c.type,val:c.val,unit:c.unit,nL:c.nL,nR:c.nR,z0:c.z0,len:c.len,eps_eff:c.eps_eff,rotation:c.rotation,uiX:c.group.x(),uiY:c.group.y(), s2pData: c.s2pData, fileName: c.fileName, ratio: c.ratio}))}; 
+        const b=new Blob([JSON.stringify(data)],{type:'application/json'}); 
+        const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download='rf_circuit.json'; a.click(); 
+    }
+    
+    function loadCircuit(input){ 
+        const f=input.files[0]; if(!f) return; 
+        const r=new FileReader(); 
+        r.onload=(e)=>{ try{ 
+            const d=JSON.parse(e.target.result); resetAll(); 
+            railCount=d.railCount||10; groundRails=new Set(d.groundRails||[]); 
+            if(d.components) d.components.forEach(c=>spawn(c.type,c,false)); 
+            drawGrid(); 
+            pushHistory();
+        }catch(err){ console.error(err); alert("Load Error"); } }; 
+        r.readAsText(f); input.value=''; 
+    }
+    
+    setTimeout(() => { fitStage(); pushHistory(); }, 500);
+</script>
+</body>
+</html>
