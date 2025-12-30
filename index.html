@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RF CirSim v1.1</title>
+    <title>RF CirSim v1.2</title>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.8.0/math.js"></script>
     <script src="https://unpkg.com/konva@9.2.0/konva.min.js"></script>
@@ -189,7 +189,7 @@
 <body>
 
     <div id="left-col">
-        <h2 style="margin: 0 0 5px 0; font-size: 18px;">RF CirSim v1.1</h2>
+        <h2 style="margin: 0 0 5px 0; font-size: 18px;">RF CirSim v1.2</h2>
         <div class="shortcut-hint">Ctrl+Z: Undo | Ctrl+C/V: Copy/Paste</div>
         <div class="shortcut-hint" style="margin-bottom: 15px;">Wheel: Zoom | Drag: Pan</div>
         
@@ -237,8 +237,12 @@
             
             <hr style="border:0; border-top:1px solid #444; margin:10px 0;">
             <button onclick="resetView()" style="color:#ddd; border-color:#666;">⟲ Reset View</button>
-            <button onclick="exportCSV()" style="color:#3498db; border-color:#3498db;">📊 Save S-Params (CSV)</button>
-            <button onclick="saveCircuit()" style="color:#27ae60; border-color:#27ae60;">💾 Save Circuit</button>
+            <div style="display:flex; gap:2px; margin-top:5px;">
+                <button onclick="exportCSV()" style="color:#3498db; border-color:#3498db; flex:1;">Save CSV</button>
+                <button onclick="exportS2P()" style="color:#9b59b6; border-color:#9b59b6; flex:1;">Save .s2p</button>
+            </div>
+            
+            <button onclick="saveCircuit()" style="color:#27ae60; border-color:#27ae60; margin-top:5px;">💾 Save Circuit</button>
             <button onclick="document.getElementById('fileInput').click()" style="color:#f39c12; border-color:#f39c12;">📂 Load Circuit</button>
             <input type="file" id="fileInput" style="display:none" onchange="loadCircuit(this)">
             <button onclick="resetAll()" style="color:#e74c3c; border-color:#e74c3c;">🗑 Reset All</button>
@@ -300,38 +304,26 @@
 
 <script>
     const C_LIGHT = 299792458;
-    // [Modified] Enable dragging for pan
     const stage = new Konva.Stage({ container: 'canvas-container', width: 100, height: 100, draggable: true });
     const gridLayer = new Konva.Layer();
     const compLayer = new Konva.Layer();
     stage.add(gridLayer);
     stage.add(compLayer);
     
-    // [Added] Zoom Handling
+    // Zoom Handling
     const scaleBy = 1.1;
     stage.on('wheel', (e) => {
-        // Stop default scrolling
         e.evt.preventDefault();
-
         const oldScale = stage.scaleX();
         const pointer = stage.getPointerPosition();
-
         const mousePointTo = {
             x: (pointer.x - stage.x()) / oldScale,
             y: (pointer.y - stage.y()) / oldScale,
         };
-
-        // Determine zoom direction
         const direction = e.evt.deltaY > 0 ? -1 : 1;
-
-        // Calculate new scale
         const newScale = direction > 0 ? oldScale * scaleBy : oldScale / scaleBy;
-
-        // Limit zoom
         if(newScale > 5 || newScale < 0.1) return;
-
         stage.scale({ x: newScale, y: newScale });
-
         const newPos = {
             x: pointer.x - mousePointTo.x * newScale,
             y: pointer.y - mousePointTo.y * newScale,
@@ -412,7 +404,6 @@
         for (let line of lines) {
             line = line.trim();
             if (!line || line.startsWith('!')) continue; 
-            
             if (line.startsWith('#')) {
                 const parts = line.toUpperCase().split(/\s+/);
                 if (parts.includes('HZ')) freqUnit = 1;
@@ -428,7 +419,6 @@
                 if (rIdx !== -1 && parts[rIdx + 1]) z0 = parseFloat(parts[rIdx + 1]);
                 continue;
             }
-
             const vals = line.trim().split(/\s+/).map(parseFloat);
             if (vals.length < 9) continue; 
             
@@ -456,7 +446,6 @@
     function interpolateSParams(dataObj, targetFreq) {
         const { data } = dataObj;
         if (data.length === 0) return null;
-        
         if (targetFreq <= data[0].f) return data[0];
         if (targetFreq >= data[data.length - 1].f) return data[data.length - 1];
 
@@ -484,7 +473,6 @@
     function handleS2PFile(input) {
         const file = input.files[0];
         if (!file || !pendingS2PComp) return;
-        
         const reader = new FileReader();
         reader.onload = (e) => {
             try {
@@ -513,14 +501,8 @@
         if (!container) return;
         stage.width(container.offsetWidth); stage.height(container.offsetHeight);
         BOT_GND_Y = container.offsetHeight - 40; 
-        
-        // Reset scale/position only on initial fit, not resizing to allow custom zoom
-        // But for this code, let's reset to ensure it looks right initially.
-        // Users can zoom afterwards.
-        
         drawGrid(); updateAllWires();
     }
-    // [Added] Reset View Function
     function resetView() {
         stage.scale({ x: 1, y: 1 });
         stage.position({ x: 0, y: 0 });
@@ -577,18 +559,13 @@
         const { rw } = getGridMetrics();
         const width = START_X + railCount * rw;
         
-        // [수정] Dark Mode일 때 GND 라인(gc)을 흰색(#ffffff)으로 변경
         const gc = isDarkMode ? '#ffffff' : '#aaa'; 
-        
         const tc = isDarkMode ? '#d4d4d4' : '#555';
         const la = isDarkMode ? '#343a40' : '#888';
         const ls = isDarkMode ? '#444444' : '#e0e0e0';
 
-        // 상단 GND 라인
         gridLayer.add(new Konva.Line({ points: [START_X - 20, TOP_GND_Y, width, TOP_GND_Y], stroke: gc, strokeWidth: 4 }));
         gridLayer.add(new Konva.Text({ x: START_X - 20, y: TOP_GND_Y - 20, text: 'GND', fontStyle: 'bold', fill: tc }));
-        
-        // 하단 GND 라인
         gridLayer.add(new Konva.Line({ points: [START_X - 20, BOT_GND_Y, width, BOT_GND_Y], stroke: gc, strokeWidth: 4 }));
         gridLayer.add(new Konva.Text({ x: START_X - 20, y: BOT_GND_Y + 10, text: 'GND', fontStyle: 'bold', fill: tc }));
 
@@ -1073,7 +1050,9 @@
         ports.sort((a,b) => a.name.localeCompare(b.name));
         const p1 = ports[0]; const p2 = ports[1];
 
-        const s11d=[], s21d=[], s11c=[], s21c=[], freqs=[];
+        const s11d=[], s21d=[], s11c=[], s21c=[];
+        const s12d=[], s22d=[], s12c=[], s22c=[]; // New Arrays for 2-Port
+        const freqs=[];
         
         abortSim = false;
         
@@ -1096,8 +1075,7 @@
             }
 
             let Y = math.zeros(N, N, 'sparse');
-            let J = math.zeros(N, 1, 'sparse');
-
+            // Build Y Matrix
             const addY = (n1, n2, yval) => {
                 if(n1!==-1 && map[n1]!==undefined) Y.set([map[n1], map[n1]], math.add(Y.get([map[n1], map[n1]]), yval));
                 if(n2!==-1 && map[n2]!==undefined) Y.set([map[n2], map[n2]], math.add(Y.get([map[n2], map[n2]]), yval));
@@ -1170,25 +1148,18 @@
                 }
                 else if (c.type === 'TX') {
                     const N_ratio = c.ratio; 
-                    // Simulation Model: Coupled Inductors with very high L and k=1
-                    // 1000nH is large enough for >1GHz
                     const L1_val = 1000; 
                     const L2_val = L1_val * N_ratio * N_ratio; 
                     const k = 0.99999; 
                     const M_val = k * Math.sqrt(L1_val * L2_val);
-
                     const L1 = L1_val * 1e-9;
                     const L2 = L2_val * 1e-9;
                     const M = M_val * 1e-9;
-
                     const delta = L1 * L2 - M * M;
                     const factor = 1 / (w * delta); 
-
-                    // Y = 1/jw * 1/delta * [L2 -M; -M L1]
                     const y11_tx = math.complex(0, -L2 * factor);
                     const y12_tx = math.complex(0, M * factor); 
                     const y22_tx = math.complex(0, -L1 * factor);
-
                     if(map[n1]!==undefined) Y.set([map[n1],map[n1]], math.add(Y.get([map[n1],map[n1]]), y11_tx));
                     if(map[n2]!==undefined) Y.set([map[n2],map[n2]], math.add(Y.get([map[n2],map[n2]]), y22_tx));
                     if(map[n1]!==undefined && map[n2]!==undefined) {
@@ -1200,26 +1171,49 @@
                 addY(n1, n2, yval);
             });
 
+            // --- Pass 1: Excitation at Port 1 ---
             const p1Node = map[p1.nL];
+            let J = math.zeros(N, 1, 'sparse');
             if(p1Node!==undefined) J.set([p1Node, 0], math.complex(2/p1.z0, 0));
 
             try {
-                const V = math.lusolve(Y, J);
-                const v1 = V.get([p1Node, 0]);
-                const s11 = math.subtract(v1, 1);
+                let V = math.lusolve(Y, J);
+                const v1_p1 = V.get([p1Node, 0]);
+                const s11 = math.subtract(v1_p1, 1);
                 s11c.push(s11);
                 s11d.push(20*Math.log10(math.abs(s11)+1e-9));
                 
+                // Initialize default values for P2 absent
+                let s21 = math.complex(0,0), s12 = math.complex(0,0), s22 = math.complex(0,0);
+                let v2_val = -100;
+
                 if(p2) {
                     const p2Node = map[p2.nL];
                     if(p2Node!==undefined) {
-                        const v2 = V.get([p2Node, 0]);
-                        s21c.push(v2);
-                        s21d.push(20*Math.log10(math.abs(v2)+1e-9));
-                    } else { s21c.push(math.complex(0,0)); s21d.push(-100); }
+                        // S21 from Pass 1
+                        s21 = V.get([p2Node, 0]);
+                        v2_val = 20*Math.log10(math.abs(s21)+1e-9);
+
+                        // --- Pass 2: Excitation at Port 2 (for S22, S12) ---
+                        J = math.zeros(N, 1, 'sparse');
+                        J.set([p2Node, 0], math.complex(2/p2.z0, 0));
+                        V = math.lusolve(Y, J);
+                        
+                        const v2_p2 = V.get([p2Node, 0]);
+                        const v1_p2 = V.get([p1Node, 0]);
+                        
+                        s22 = math.subtract(v2_p2, 1);
+                        s12 = v1_p2;
+                    }
                 }
+                s21c.push(s21); s21d.push(v2_val);
+                s12c.push(s12); s12d.push(20*Math.log10(math.abs(s12)+1e-9));
+                s22c.push(s22); s22d.push(20*Math.log10(math.abs(s22)+1e-9));
+
             } catch(e) { 
-                s11d.push(-100); if(p2) s21d.push(-100); s11c.push(math.complex(0,0));
+                s11d.push(-100); s21d.push(-100); s12d.push(-100); s22d.push(-100);
+                s11c.push(math.complex(0,0)); s21c.push(math.complex(0,0)); 
+                s12c.push(math.complex(0,0)); s22c.push(math.complex(0,0));
                 break;
             }
         }
@@ -1230,11 +1224,20 @@
             document.getElementById('btnStop').style.display = 'none';
         }
         
-        lastSimData = { s11_cplx: s11c, s21_cplx: s21c, freq: freqs, s11_db: s11d, s21_db: s21d };
+        lastSimData = { s11_cplx: s11c, s21_cplx: s21c, s12_cplx: s12c, s22_cplx: s22c, freq: freqs, s11_db: s11d, s21_db: s21d, s12_db: s12d, s22_db: s22d };
         
         if(activeSearchMode) executeSearchLogic(activeSearchMode);
 
-        drawRectPlot([{label:'S11', data:s11d, borderColor:'#007acc'}, ...(p2 ? [{label:'S21', data:s21d, borderColor:'#27ae60'}] : [])]);
+        const datasets = [
+            {label:'S11', data:s11d, borderColor:'#007acc'},
+            ...(p2 ? [
+                {label:'S21', data:s21d, borderColor:'#27ae60'},
+                {label:'S12', data:s12d, borderColor:'#9b59b6', hidden: true},
+                {label:'S22', data:s22d, borderColor:'#e67e22', hidden: true}
+            ] : [])
+        ];
+
+        drawRectPlot(datasets);
         plotSmithData(s11c);
         if(markers.length > 0) {
             document.getElementById('marker-container').style.display = 'block';
@@ -1506,19 +1509,58 @@
 
     function exportCSV() {
         if (!lastSimData || !lastSimData.freq) return alert("No simulation data to export.");
-        let csvContent = "Freq(GHz),S11(dB),S21(dB)\n";
+        let csvContent = "Freq(GHz),S11(dB),S21(dB),S12(dB),S22(dB)\n";
         const len = lastSimData.freq.length;
         for (let i = 0; i < len; i++) {
             const f = lastSimData.freq[i].toFixed(4);
             const s11 = lastSimData.s11_db[i].toFixed(4);
-            const s21 = (lastSimData.s21_db && lastSimData.s21_db[i]) ? lastSimData.s21_db[i].toFixed(4) : "-100";
-            csvContent += `${f},${s11},${s21}\n`;
+            const s21 = lastSimData.s21_db ? lastSimData.s21_db[i].toFixed(4) : "-100";
+            const s12 = lastSimData.s12_db ? lastSimData.s12_db[i].toFixed(4) : "-100";
+            const s22 = lastSimData.s22_db ? lastSimData.s22_db[i].toFixed(4) : "-100";
+            csvContent += `${f},${s11},${s21},${s12},${s22}\n`;
         }
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement("a");
         const url = URL.createObjectURL(blob);
         link.setAttribute("href", url);
         link.setAttribute("download", "s_parameters.csv");
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    function exportS2P() {
+        if (!lastSimData || !lastSimData.freq) return alert("No simulation data to export.");
+        let content = "! RF CirSim Generated S2P File\n";
+        content += "# GHz S DB R 50\n";
+        const len = lastSimData.freq.length;
+        
+        const toDeg = (rad) => (rad * 180 / Math.PI).toFixed(4);
+        
+        for (let i = 0; i < len; i++) {
+            const f = lastSimData.freq[i].toFixed(6);
+            
+            const s11m = lastSimData.s11_db[i].toFixed(4);
+            const s11a = toDeg(Math.atan2(lastSimData.s11_cplx[i].im, lastSimData.s11_cplx[i].re));
+            
+            let s21m="-100", s21a="0", s12m="-100", s12a="0", s22m="-100", s22a="0";
+            
+            if(lastSimData.s21_cplx && lastSimData.s21_cplx[i]) {
+                s21m = lastSimData.s21_db[i].toFixed(4);
+                s21a = toDeg(Math.atan2(lastSimData.s21_cplx[i].im, lastSimData.s21_cplx[i].re));
+                s12m = lastSimData.s12_db[i].toFixed(4);
+                s12a = toDeg(Math.atan2(lastSimData.s12_cplx[i].im, lastSimData.s12_cplx[i].re));
+                s22m = lastSimData.s22_db[i].toFixed(4);
+                s22a = toDeg(Math.atan2(lastSimData.s22_cplx[i].im, lastSimData.s22_cplx[i].re));
+            }
+            content += `${f} ${s11m} ${s11a} ${s21m} ${s21a} ${s12m} ${s12a} ${s22m} ${s22a}\n`;
+        }
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8;' });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", "simulation_data.s2p");
         link.style.visibility = 'hidden';
         document.body.appendChild(link);
         link.click();
